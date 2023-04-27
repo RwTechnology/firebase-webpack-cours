@@ -18,6 +18,20 @@ import {
     where,
 } from "firebase/firestore";
 
+import {
+    getAuth,
+    signInWithRedirect,
+    GoogleAuthProvider,
+    onAuthStateChanged,
+    signOut,
+    createUserWithEmailAndPassword,
+    signInWithEmailAndPassword,
+    sendSignInLinkToEmail,
+    isSignInWithEmailLink,
+    signInWithEmailLink,
+    linkWithRedirect,
+} from "firebase/auth";
+
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -34,6 +48,9 @@ const app = initializeApp(firebaseConfig);
 
 //Initialisation des services
 const db = getFirestore(app);
+
+//Initialisation des services d'authentification
+const auth = getAuth(app);
 
 const utilisateurs = collection(db, "utilisateurs");
 const citiesRef = collection(db, "Villes");
@@ -65,13 +82,13 @@ const q5 = query(citiesRef, where("population", ">", 1000000));
 const q6 = query(
     citiesRef,
     where(
-      "dateDajout",
-      ">",
-      new Date("Jul 10, 2022"),
-      where("dateDajout", "<", new Date("Jul 30, 2022")),
-      orderBy("dateDajout", "desc")
+        "dateDajout",
+        ">",
+        new Date("Jul 10, 2022"),
+        where("dateDajout", "<", new Date("Jul 30, 2022")),
+        orderBy("dateDajout", "desc")
     )
-  );
+);
 
 
 //7. Récuperer la ville avec comme commune 'Nyarugege'
@@ -81,12 +98,12 @@ const q7 = query(citiesRef, where("communes", "array-contains", "Nyarugenge"));
 const q8 = query(
     citiesRef,
     where("communes", "array-contains-any", [
-      "Nyarugenge",
-      "Bandale",
-      "Cyangugu",
-      "Ibanda",
+        "Nyarugenge",
+        "Bandale",
+        "Cyangugu",
+        "Ibanda",
     ])
-  );
+);
 
 //9. Récuperer les 3 dernieres villes recement ajoutées
 const q9 = query(citiesRef, orderBy("dateDajout", "desc"), limit(3));
@@ -98,7 +115,7 @@ const q10 = query(
     citiesRef,
     where("pays", "==", "Rd Congo"),
     where("population", "<", 3000000)
-  );
+);
 
 
 // => Requêtes de groupe des collections
@@ -127,13 +144,13 @@ const q12 = query(habitantsRef, where("sexe", "==", "F"));
 // });
 
 //RealTime update
-onSnapshot(q12, (snapshot) => {
-    let villes = [];
-    snapshot.docs.forEach((doc) => {
-        villes.push({ ...doc.data(), id: doc.id });
-    });
-    console.log(villes);
-});
+// onSnapshot(q12, (snapshot) => {
+//     let villes = [];
+//     snapshot.docs.forEach((doc) => {
+//         villes.push({ ...doc.data(), id: doc.id });
+//     });
+//     console.log(villes);
+// });
 
 
 
@@ -192,3 +209,107 @@ updateCityForm.addEventListener("submit", (e) => {
 });
 
 
+// ================================================================ Authentification =================================================
+
+//Se connecter avec un compte Google
+const signInGoogleBtn = document.querySelector(".googleLogin");
+signInGoogleBtn.addEventListener("click", () => {
+    signInWithRedirect(auth, new GoogleAuthProvider());
+});
+
+//Souscription a l'etat de la connexion de l'utilisateur
+onAuthStateChanged(auth, (user) => {
+    console.log("Changement du status de l'utilisateur:", user);
+});
+
+//Deconnexion de l'utilisateur
+const logoutBtn = document.querySelector(".logout");
+logoutBtn.addEventListener("click", () => {
+  signOut(auth)
+    .then(() => console.log("utilisateur deconnecté"))
+    .catch((err) => console.log(err.message));
+});
+
+// Inscrire l'utilisateur
+const signupForm = document.querySelector(".signup");
+signupForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+
+  const email = signupForm.email.value;
+  const password = signupForm.password.value;
+
+  console.log(email);
+
+  createUserWithEmailAndPassword(auth, email, password)
+    .then((cred) => {
+      console.log("user created:", cred.user);
+      signupForm.reset();
+    })
+    .catch((err) => {
+      console.log(err.message);
+    });
+});
+
+// connexion et déconnexion
+const loginForm = document.querySelector(".login");
+loginForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+
+  const email = loginForm.email.value;
+  const password = loginForm.password.value;
+
+  signInWithEmailAndPassword(auth, email, password)
+    .then((cred) => {
+      console.log("utilisateur connecté:", cred.user);
+      loginForm.reset();
+    })
+    .catch((err) => {
+      console.log(err.message);
+    });
+});
+
+//Connexion sans password (avec lien email)
+const actionCodeSettings = {
+    url: "http://localhost:5500/dist/index.html",
+    handleCodeInApp: true,
+  };
+
+const passWordLessForm = document.querySelector(".passwordless");
+passWordLessForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const email = passWordLessForm.email.value;
+
+  sendSignInLinkToEmail(auth, email, actionCodeSettings)
+    .then(() => {
+      window.localStorage.setItem("emailForSignIn", email);
+      console.log("mail envoyé à", email);
+      passWordLessForm.reset();
+    })
+    .catch((error) => {
+      const errorCode = error.code;
+      const errorMessage = error.message;
+      console.log(errorCode, errorMessage);
+    });
+});
+
+if (isSignInWithEmailLink(auth, window.location.href)) {
+  let email = window.localStorage.getItem("emailForSignIn");
+
+  if (!email) {
+    email = window.prompt("Veuillez fournir votre courriel pour confirmation");
+  }
+  // Le SDK client analysera le code du lien pour vous.
+  signInWithEmailLink(auth, email, window.location.href)
+    .then((result) => {
+      // Effacer le courriel de l’entrepôt.
+      console.log(result.user);
+      window.localStorage.removeItem("emailForSignIn");
+    })
+    .catch((error) => {});
+}
+
+//Lier le compte avec un compte Google
+const linkWithGoogleBtn = document.querySelector(".linkAccount");
+linkWithGoogleBtn.addEventListener("click", () => {
+  linkWithRedirect(auth.currentUser, new GoogleAuthProvider());
+});
