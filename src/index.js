@@ -1,315 +1,388 @@
-// Import the functions you need from the SDKs you need
+import { MDCDialog } from "@material/dialog";
 import { initializeApp } from "firebase/app";
 import {
-    addDoc,
-    collection,
-    collectionGroup,
-    deleteDoc,
-    doc,
-    getDocs,
-    getFirestore,
-    limit,
-    onSnapshot,
-    orderBy,
-    query,
-    serverTimestamp,
-    setDoc,
-    updateDoc,
-    where,
+  getFirestore,
+  onSnapshot,
+  deleteDoc,
+  doc,
+  query,
+  where,
+  orderBy,
+  serverTimestamp,
+  setDoc,
+  collectionGroup,
+  getDoc,
+  enableMultiTabIndexedDbPersistence,
 } from "firebase/firestore";
 
 import {
-    getAuth,
-    signInWithRedirect,
-    GoogleAuthProvider,
-    onAuthStateChanged,
-    signOut,
-    createUserWithEmailAndPassword,
-    signInWithEmailAndPassword,
-    sendSignInLinkToEmail,
-    isSignInWithEmailLink,
-    signInWithEmailLink,
-    linkWithRedirect,
+  getAuth,
+  isSignInWithEmailLink,
+  signInWithEmailLink,
+  GoogleAuthProvider,
+  linkWithRedirect,
+  signInWithRedirect,
+  signOut,
+  onAuthStateChanged,
+  sendSignInLinkToEmail,
 } from "firebase/auth";
 
+import {
+  deleteObject,
+  getDownloadURL,
+  getStorage,
+  ref,
+  uploadBytes,
+} from "firebase/storage";
 
-// Your web app's Firebase configuration
 const firebaseConfig = {
-    apiKey: "AIzaSyAlcXdd_jwkP-BCJyLi7O_kH9ICLTdsgic",
-    authDomain: "fir-demo-c90c1.firebaseapp.com",
-    projectId: "fir-demo-c90c1",
-    storageBucket: "fir-demo-c90c1.appspot.com",
-    messagingSenderId: "39944992615",
-    appId: "1:39944992615:web:fcc0309041d09d8dc961c2"
+  apiKey: "AIzaSyAKiBFZThWivg81dsXUS9D8d-K849mHEKE",
+  authDomain: "fir-demo-97317.firebaseapp.com",
+  projectId: "fir-demo-97317",
+  storageBucket: "fir-demo-97317.appspot.com",
+  messagingSenderId: "872739170878",
+  appId: "1:872739170878:web:f3e13d72749de28f0c7f6f",
 };
 
-// Initialize Firebase
+//initialisation de Firebase
 const app = initializeApp(firebaseConfig);
 
-//Initialisation des services
+// inilisation de service Firestore et Authentification
 const db = getFirestore(app);
-
-//Initialisation des services d'authentification
 const auth = getAuth(app);
+const storage = getStorage();
 
-const utilisateurs = collection(db, "utilisateurs");
-const citiesRef = collection(db, "Villes");
+enableMultiTabIndexedDbPersistence(db);
 
+// Référence de la collection
+const citiesRef = collectionGroup(db, "villes");
+const citiesQuery = query(citiesRef, orderBy("dateDajout", "desc"));
 
-// ============================================================================= Les Requete
-// => Requête simple
-//1. Récuperer les villes de la Rd Congo
-const q1 = query(citiesRef, where("pays", "==", "Rd Congo"));
+//Enregistrement des données de l'utilisateur
+const newUser = ({ email, uid }) => {
+  const userRef = doc(db, "utilisateurs", uid);
+  setDoc(userRef, { email, uid }, { merge: true });
+};
 
-//2. Récuperer toutes les villes sauf celles de la RDC
-const q2 = query(citiesRef, where("pays", "!=", "Rd Congo"));
+//Observer les données en temps réel
+const cityItemContainer = document.querySelector(".city-item-container");
+let villes = [];
 
-//3 Récuperer seulement les villes de la RD Congo et celles du Rwanda
-const q3 = query(citiesRef, where("pays", "in", ["Rd Congo", "Rwanda"]));
+onSnapshot(citiesQuery, (snapshot) => {
+  villes = snapshot.docs.map((d) => {
+    const isOffLine = d.metadata.hasPendingWrites;
+    return { isOffLine, ...d.data() };
+  });
 
-//4. Récuperer toutes les villes sauf 'Bujumbura', 'Gisenyi', 'Goma'
-const q4 = query(
-    citiesRef,
-    where("ville", "not-in", ["Bujumbura", "Gisenyi", "Goma"])
-);
+  let city = "";
 
+  villes.forEach((ville) => {
+    city += `<a class="city-card mdc-card mdc-card--outlined" href="detail.html?data=${
+      ville.cityID
+    }" style="opacity: ${ville.isOffLine === true ? "0.5" : "1"}">
+    
+    ${
+      ville.cityImgUrl
+        ? `<img
+          src="${ville.cityImgUrl}"
+          class="image-thubnail"
+        />`
+        : ""
+    }
+    
+    <h1 class="city-title">${ville.ville}</h1>
+          <h4 class="city-country">${
+            ville.capital === true ? "La capitale de " : "Pays: "
+          } ${ville.pays}</h4>
+          <p class="city-population">Population: ${ville.population}</p>
+          <p class="city-publisher">Postée par ${
+            ville.user?.uid === auth.currentUser.uid
+              ? "vous"
+              : ville.user?.email
+          }
+          </p>
+          <p class="city-population">Ajoutée le : ${getFormatedDate(
+            ville.dateDajout
+          )}</p>
+    </a>
+ `;
+  });
+  cityItemContainer.innerHTML = city;
+});
 
-//5. Récuperer les villes dont la population est superieure à 1M
-const q5 = query(citiesRef, where("population", ">", 1000000));
-
-//6. Récuperer toutes les villes ajoutées entre le 10 et 30 juillet 2022
-// et Arrangez-les selon l'odre decroissant
-const q6 = query(
-    citiesRef,
-    where(
-        "dateDajout",
-        ">",
-        new Date("Jul 10, 2022"),
-        where("dateDajout", "<", new Date("Jul 30, 2022")),
-        orderBy("dateDajout", "desc")
-    )
-);
-
-
-//7. Récuperer la ville avec comme commune 'Nyarugege'
-const q7 = query(citiesRef, where("communes", "array-contains", "Nyarugenge"));
-
-//8. Récuperer les villes avec comme commune 'Nyarugege', 'Bandale', 'Cyangugu', 'Ibanda'
-const q8 = query(
-    citiesRef,
-    where("communes", "array-contains-any", [
-        "Nyarugenge",
-        "Bandale",
-        "Cyangugu",
-        "Ibanda",
-    ])
-);
-
-//9. Récuperer les 3 dernieres villes recement ajoutées
-const q9 = query(citiesRef, orderBy("dateDajout", "desc"), limit(3));
-
-// => Reqêtes composées
-//10.Récuperer toutes les villes de la RD Congo
-//dont la population est inferieure à 3M
-const q10 = query(
-    citiesRef,
-    where("pays", "==", "Rd Congo"),
-    where("population", "<", 3000000)
-);
-
-
-// => Requêtes de groupe des collections
-// Référence de la sous-collection (NB: ID unique pour les sous-collections)
-const habitantsRef = collectionGroup(db, "habitants");
-
-//11. Récuperer tous les habitants disponibles
-const q11 = query(habitantsRef);
-
-//12. Récuperer les habitants femins
-const q12 = query(habitantsRef, where("sexe", "==", "F"));
-
-
-
-
-
-// ================================================================ CRUD =================================
-
-//affiche les utilisateurs des services
-// getDocs(utilisateurs).then((snapshot) => {
-//     let utilisateurs = []
-//     snapshot.docs.forEach(doc => {
-//         utilisateurs.push({ ...doc.data(), id: doc.id })
-//         console.log(utilisateurs);
-//     });
-// });
-
-//RealTime update
-// onSnapshot(q12, (snapshot) => {
-//     let villes = [];
-//     snapshot.docs.forEach((doc) => {
-//         villes.push({ ...doc.data(), id: doc.id });
-//     });
-//     console.log(villes);
-// });
-
-
-
-// affiche les villes des services
-// getDocs(citiesRef).then((snapshot) => {
-//     let villes = []
-//     snapshot.docs.forEach(doc => {
-//         villes.push({ ...doc.data(), id: doc.id })
-//         console.log(villes);
-//     });
-// });
-
-
-//Ajouter un document
-const addCityForm = document.querySelector(".ajouter");
-addCityForm.addEventListener("submit", (e) => {
+let cityImgUrl = "";
+const addCityForm = document.querySelector(".set-city");
+const setCityForm = async (docCityID, dialog) => {
+  //Ajouter document "ville" dans une sous-collection de la collection "utilisateurs"
+  addCityForm.addEventListener("submit", (e) => {
     e.preventDefault();
 
-    //Ajouter un nouveau document avec un id généré
-    addDoc(citiesRef, {
-        pays: addCityForm.pays.value,
-        ville: addCityForm.ville.value,
-        capital: addCityForm.capital.value === "true" ? true : false,
-        dateDajout: serverTimestamp(),
-    }).then(() => addCityForm.reset());
+    const newDocID = String(addCityForm.ville.value)
+      .toLocaleLowerCase()
+      .replace(/\s+/g, "");
+    const cityID = docCityID === "nouvelle-ville" ? newDocID : docCityID;
+    const user = auth.currentUser;
+    const usersCityRef = `utilisateurs/${user.uid}/villes`;
+    const userCityDocRef = doc(db, usersCityRef, cityID);
 
-    //Ajout du document avec un id personalisé
-    /* setDoc(doc(db, "Villes", "KIN"), {
-      pays: addCityForm.pays.value,
-      ville: addCityForm.ville.value,
-      capital: addCityForm.capital.value === "true" ? true : false,
+    const pays = addCityForm.pays.value;
+    const ville = addCityForm.ville.value;
+    const population = Number(addCityForm.population.value);
+    const capital = addCityForm.capital.value === "true" ? true : false;
+
+    setDoc(userCityDocRef, {
+      cityID,
+      pays,
+      ville,
+      population,
+      capital,
+      cityImgUrl,
       dateDajout: serverTimestamp(),
-    }).then(() => addCityForm.reset()); */
-});
-
-//Suppression d'un document
-const deleteCityForm = document.querySelector(".suppression");
-deleteCityForm.addEventListener("submit", (e) => {
-    e.preventDefault();
-
-    const docRef = doc(db, "Villes", deleteCityForm.id.value);
-
-    deleteDoc(docRef).then(() => deleteCityForm.reset());
-});
-
-//Modification d'un document
-const updateCityForm = document.querySelector(".update");
-updateCityForm.addEventListener("submit", (e) => {
-    e.preventDefault();
-
-    const docRef = doc(db, "Villes", updateCityForm.id.value);
-
-    updateDoc(docRef, { ville: "La ville à jour, ok" }).then(() =>
-        updateCityForm.reset()
-    );
-});
-
-
-// ================================================================ Authentification =================================================
-
-//Se connecter avec un compte Google
-const signInGoogleBtn = document.querySelector(".googleLogin");
-signInGoogleBtn.addEventListener("click", () => {
-    signInWithRedirect(auth, new GoogleAuthProvider());
-});
-
-//Souscription a l'etat de la connexion de l'utilisateur
-onAuthStateChanged(auth, (user) => {
-    console.log("Changement du status de l'utilisateur:", user);
-});
-
-//Deconnexion de l'utilisateur
-const logoutBtn = document.querySelector(".logout");
-logoutBtn.addEventListener("click", () => {
-  signOut(auth)
-    .then(() => console.log("utilisateur deconnecté"))
-    .catch((err) => console.log(err.message));
-});
-
-// Inscrire l'utilisateur
-const signupForm = document.querySelector(".signup");
-signupForm.addEventListener("submit", (e) => {
-  e.preventDefault();
-
-  const email = signupForm.email.value;
-  const password = signupForm.password.value;
-
-  console.log(email);
-
-  createUserWithEmailAndPassword(auth, email, password)
-    .then((cred) => {
-      console.log("user created:", cred.user);
-      signupForm.reset();
-    })
-    .catch((err) => {
-      console.log(err.message);
+      user: {
+        email: user.email,
+        uid: user.uid,
+      },
     });
+
+    addCityForm.reset();
+
+    window.localStorage.removeItem("pathReference");
+
+    if (docCityID === "nouvelle-ville") dialog.close();
+  });
+};
+
+//Effacer un document
+const deteCityDoc = (userID) => {
+  const cityIdInStore = window.localStorage.getItem("cityID");
+  if (cityIdInStore) {
+    const usersCityRef = `utilisateurs/${userID}/villes`;
+    deleteDoc(doc(db, usersCityRef, cityIdInStore));
+    window.localStorage.removeItem("cityID");
+  }
+};
+
+const getFormatedDate = (date) => {
+  const formatedDate = new Intl.DateTimeFormat("fr").format(
+    date ? date.toDate() : new Date()
+  );
+  return formatedDate;
+};
+
+//téléchargement de l'image vers Cloud Storage
+const uploadImgToStorage = async (file) => {
+  const filePath = `images/${Date.now()}`;
+  const pathReference = ref(storage, filePath);
+  const uploadTask = await uploadBytes(pathReference, file);
+  window.localStorage.setItem("pathReference", uploadTask.ref.fullPath);
+  return await getDownloadURL(pathReference);
+};
+
+const isOnline = async () => {
+  try {
+    await fetch("https://jsonplaceholder.typicode.com/todos/1");
+    return true;
+  } catch (error) {
+    return false;
+  }
+};
+
+const ImgSection = document.querySelector(".image-section");
+
+const submitBtn = document.querySelector(".submit-btn");
+const imgProcessIndicator = document.querySelector(".img-progress-indicator");
+const imagePreview = document.querySelector(".image-preview");
+const inputImage = document.querySelector(".image-input");
+imgProcessIndicator.style.display = "none";
+imagePreview.style.display = "none";
+
+inputImage.addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  submitBtn.disabled = true;
+
+  try {
+    if (cityImgUrl) await deleteImgToStorage();
+    imgProcessIndicator.style.display = "";
+    cityImgUrl = await uploadImgToStorage(file);
+    imagePreview.style.display = "";
+    imgProcessIndicator.style.display = "none";
+    imagePreview.setAttribute("src", cityImgUrl);
+    submitBtn.disabled = false;
+  } catch (error) {
+    cityImgUrl = "";
+    imgProcessIndicator.innerHTML = "Une erreur s'est produite";
+    submitBtn.disabled = false;
+  }
 });
 
-// connexion et déconnexion
-const loginForm = document.querySelector(".login");
-loginForm.addEventListener("submit", (e) => {
-  e.preventDefault();
+const deleteImgToStorage = async () => {
+  const pathReference = window.localStorage.getItem("pathReference");
+  const fileRef = ref(storage, pathReference);
+  imgProcessIndicator.style.display = "";
+  imagePreview.style.display = "none";
+  addCityForm.reset();
+  return await deleteObject(fileRef);
+};
 
-  const email = loginForm.email.value;
-  const password = loginForm.password.value;
+if (
+  !window.location.search.replace("?data=", "") ||
+  location.href.includes("?apiKey=")
+) {
+  const dialog = new MDCDialog(document.querySelector(".mdc-dialog"));
 
-  signInWithEmailAndPassword(auth, email, password)
-    .then((cred) => {
-      console.log("utilisateur connecté:", cred.user);
-      loginForm.reset();
-    })
-    .catch((err) => {
-      console.log(err.message);
-    });
-});
+  const addBtn = document.querySelector(".addBtn");
+  addBtn.addEventListener("click", () => dialog.open());
 
-//Connexion sans password (avec lien email)
-const actionCodeSettings = {
-    url: "http://localhost:5500/dist/index.html",
+  dialog.listen("MDCDialog:opened", async () => {
+    const hasConnection = await isOnline();
+    hasConnection
+      ? (ImgSection.style.display = "")
+      : (ImgSection.style.display = "none");
+  });
+
+  const cancelBtn = document.querySelector(".cancel-btn");
+  cancelBtn.addEventListener("click", async () => {
+    if (cityImgUrl) await deleteImgToStorage();
+  });
+
+  //Ajouter nouvelle ville
+  setCityForm("nouvelle-ville", dialog);
+
+  const actionCodeSettings = {
+    url: window.location.href,
     handleCodeInApp: true,
   };
 
-const passWordLessForm = document.querySelector(".passwordless");
-passWordLessForm.addEventListener("submit", (e) => {
-  e.preventDefault();
-  const email = passWordLessForm.email.value;
+  //Connexion sans password (avec lien email)
+  const passWordLessForm = document.querySelector(".passwordless");
+  passWordLessForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const email = passWordLessForm.email.value;
 
-  sendSignInLinkToEmail(auth, email, actionCodeSettings)
-    .then(() => {
-      window.localStorage.setItem("emailForSignIn", email);
-      console.log("mail envoyé à", email);
-      passWordLessForm.reset();
-    })
-    .catch((error) => {
-      const errorCode = error.code;
-      const errorMessage = error.message;
-      console.log(errorCode, errorMessage);
-    });
-});
+    sendSignInLinkToEmail(auth, email, actionCodeSettings)
+      .then(() => {
+        window.localStorage.setItem("emailForSignIn", email);
+        passWordLessForm.reset();
+      })
+      .catch((error) => {
+        const errorCode = error.code;
+        const errorMessage = error.message;
+        console.log(errorCode, errorMessage);
+      });
+  });
 
-if (isSignInWithEmailLink(auth, window.location.href)) {
-  let email = window.localStorage.getItem("emailForSignIn");
+  if (isSignInWithEmailLink(auth, window.location.href)) {
+    let email = window.localStorage.getItem("emailForSignIn");
 
-  if (!email) {
-    email = window.prompt("Veuillez fournir votre courriel pour confirmation");
+    if (!email) {
+      email = window.prompt("Please provide your email for confirmation");
+    }
+
+    signInWithEmailLink(auth, email, window.location.href)
+      .then(() => {
+        //Lier le compte avec un compte Google
+        window.localStorage.removeItem("emailForSignIn");
+        linkWithRedirect(auth.currentUser, new GoogleAuthProvider());
+      })
+      .catch((error) => console.log(error));
   }
-  // Le SDK client analysera le code du lien pour vous.
-  signInWithEmailLink(auth, email, window.location.href)
-    .then((result) => {
-      // Effacer le courriel de l’entrepôt.
-      console.log(result.user);
-      window.localStorage.removeItem("emailForSignIn");
-    })
-    .catch((error) => {});
+
+  //Se connecter avec un compte Google
+  const signInGoogleBtn = document.querySelector(".googleLogin");
+  signInGoogleBtn.addEventListener("click", () => {
+    signInWithRedirect(auth, new GoogleAuthProvider());
+  });
+} else {
+  //detail page
+  const cityID = window.location.search.replace("?data=", "");
+  const queryDoc = query(citiesRef, where("cityID", "==", cityID));
+
+  onSnapshot(queryDoc, (snapshot) => {
+    const villes = snapshot.docs.map((d) => d.data());
+    const cityItemContainer = document.querySelector(".city-card");
+
+    cityItemContainer.innerHTML = `
+    ${
+      villes[0].cityImgUrl
+        ? `<a href="${villes[0].cityImgUrl}"><img
+          src="${villes[0].cityImgUrl}"
+          class="image-thubnail"
+        /><a/>`
+        : ""
+    }
+        <h1 class="city-title">${villes[0].ville}</h1>
+        <h4 class="city-country">${
+          villes[0].capital === true ? "La capitale de " : "Pays: "
+        } ${villes[0].pays}</h4>
+        <p class="city-population">Poupulation: ${villes[0].population}</p>
+        <p class="city-publisher">Postée par ${
+          villes[0].user?.uid === auth.currentUser.uid
+            ? "vous"
+            : villes[0].user?.email
+        }
+        </p>
+        <p class="city-population">Ajoutée le: ${getFormatedDate(
+          villes[0].dateDajout
+        )}
+        </p>
+        <a class="delete-btn mdc-button mdc-button--raised">
+          <span class="mdc-button__label">Supprimer cette ville</span>
+        <a/>
+       `;
+
+    const deleteBtn = document.querySelector(".delete-btn");
+    const editBtn = document.querySelector(".edit-btn");
+    const addCityForm = document.querySelector(".set-city");
+    const isUserOwner = villes[0].user?.uid === auth.currentUser.uid;
+    deleteBtn.style.display = isUserOwner ? "" : "none";
+    addCityForm.style.display = isUserOwner ? "" : "none";
+
+    deleteBtn.addEventListener("click", () => {
+      window.localStorage.setItem("cityID", cityID);
+      location.assign(`${location.origin}/dist/index.html`);
+    });
+
+    //Modification de la ville
+    editBtn.addEventListener("click", () => {
+      setCityForm(cityID);
+      imagePreview.style.display = "none";
+    });
+  });
 }
 
-//Lier le compte avec un compte Google
-const linkWithGoogleBtn = document.querySelector(".linkAccount");
-linkWithGoogleBtn.addEventListener("click", () => {
-  linkWithRedirect(auth.currentUser, new GoogleAuthProvider());
+//Le changement d'etat de l'interface (connexion/deconnexion)
+const isLogInToolBar = document.querySelector(".isLogIn-toolbar");
+const isLogInHome = document.querySelector(".isLogIn-home");
+const isLogOut = document.querySelector(".isLogOut");
+isLogInToolBar.style.display = "none";
+isLogInHome.style.display = "none";
+isLogOut.style.display = "none";
+
+const userEmail = document.querySelector(".current-user");
+
+// subscription à l'état de la connexion utilisateur
+onAuthStateChanged(auth, async (user) => {
+  if (user) {
+    //state
+    isLogInToolBar.style.display = "";
+    isLogInHome.style.display = "";
+    isLogOut.style.display = "none";
+    userEmail.innerHTML = `${user.email}`;
+
+    //Suppression d'une ville
+    deteCityDoc(user.uid);
+
+    //ajout de nouveau utilisateur dans la bdd
+    const userDocRef = doc(db, "utilisateurs", `${user.uid}`);
+    const userDoc = await getDoc(userDocRef);
+    if (!userDoc.exists()) newUser(user);
+  } else {
+    isLogInToolBar.style.display = "none";
+    isLogInHome.style.display = "none";
+    isLogOut.style.display = "";
+  }
 });
+
+//Deconnexion
+const logoutButton = document.querySelector(".logoutBtn");
+logoutButton.addEventListener("click", () => signOut(auth));
